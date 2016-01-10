@@ -1,0 +1,34 @@
+#pragma once
+
+#include "Trainer.hpp"
+#include <random>
+
+class DynamicTrainer : public Trainer {
+public:
+
+  DynamicTrainer(float startLearnRate,
+                 float maxLearnRate,
+                 float momentumAmount,
+                 unsigned stochasticSamples);
+
+  virtual ~DynamicTrainer() = default;
+
+  void Train(
+      Network &network, vector<TrainingSample> &trainingSamples, unsigned iterations) override;
+
+private:
+
+  const float startLearnRate;
+  const float maxLearnRate;
+  const float momentumAmount;
+  const unsigned stochasticSamples;
+
+  mt19937 rnd;
+
+  unsigned curSamplesIndex;
+  float curLearnRate;
+  float prevSampleError;
+
+  void updateLearnRate(unsigned curIter, unsigned iterations, float sampleError);
+  vector<TrainingSample> getStochasticSamples(vector<TrainingSample> &allSamples);
+};
