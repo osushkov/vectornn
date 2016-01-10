@@ -64,8 +64,8 @@ void evaluateNetwork(Network &network, const std::vector<TrainingSample> &evalSa
 
     for (unsigned i = 0; i < result.rows(); i++) {
       bool isCorrect =
-          (result(i) > 0.9f && es.expectedOutput(i) > 0.5f) ||
-          (result(i) < 0.1f && es.expectedOutput(i) < 0.5f);
+          (result(i) > 0.5f && es.expectedOutput(i) > 0.5f) ||
+          (result(i) < 0.4f && es.expectedOutput(i) < 0.5f);
       numCorrect += isCorrect ? 1 : 0;
     }
   }
@@ -81,7 +81,7 @@ int main() {
   uptr<Trainer> trainer = make_unique<DynamicTrainer>(0.5f, 0.5f, 0.25f, 500);
 
   vector<TrainingSample> trainingSamples = getTrainingData(8000);
-  trainer->Train(network, trainingSamples, 10000);
+  trainer->Train(network, trainingSamples, 100000);
 
   vector<TrainingSample> evalSamples = getTrainingData(1000);
   evaluateNetwork(network, evalSamples);
