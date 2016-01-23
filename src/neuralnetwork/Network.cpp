@@ -89,16 +89,13 @@ private:
     assert(input.rows() == numInputs);
 
     ctx.layerOutputs.resize(layerWeights.NumLayers());
-    Vector nodeValues = input;
-
-    ctx.layerOutputs[0] = getLayerOutput(input, layerWeights(i));
-
+    ctx.layerOutputs[0] = getLayerOutput(input, layerWeights(0));
     for (unsigned i = 1; i < layerWeights.NumLayers(); i++) {
       ctx.layerOutputs[i] = getLayerOutput(ctx.layerOutputs[i-1], layerWeights(i));
     }
 
-    assert(ctx.layerOutput[ctx.layerOutput.size()-1].rows() == numOutputs);
-    return ctx.layerOutput[ctx.layerOutput.size()-1];
+    assert(ctx.layerOutputs[ctx.layerOutputs.size()-1].rows() == numOutputs);
+    return ctx.layerOutputs[ctx.layerOutputs.size()-1];
   }
 
   Vector getLayerOutput(const Vector &prevLayer, const Matrix &layerWeights) {
@@ -123,25 +120,6 @@ private:
       result(i).setZero();
     }
     return result;
-  }
-
-  pair<Tensor, float> computeGradient(
-      const vector<TrainingSample> &samples, unsigned start, unsigned end) {
-    Tensor netGradient = zeroGradient();
-    float error = 0.0f;
-
-    for (unsigned i = start; i < end; i++) {
-      NetworkContext ctx;
-      pair<Tensor, float> gradientAndError = computeSampleGradient(samples[i], ctx);
-      netGradient += gradientAndError.first;
-      error += gradientAndError.second;
-    }
-
-    float scaleFactor = 1.0f / (end - start);
-    netGradient *= scaleFactor;
-    error *= scaleFactor;
-
-    return make_pair(netGradient, error);
   }
 
   pair<Tensor, float> computeSampleGradient(const TrainingSample &sample, NetworkContext &ctx) {
