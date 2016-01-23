@@ -127,8 +127,7 @@ private:
     for (int i = ctx.layerDeltas.size() - 2; i >= 0; i--) {
       Matrix noBiasWeights =
           layerWeights(i+1).bottomRightCorner(layerWeights(i+1).rows(), layerWeights(i+1).cols()-1);
-      noBiasWeights.transposeInPlace();
-      ctx.layerDeltas[i] = noBiasWeights * ctx.layerDeltas[i+1];
+      ctx.layerDeltas[i] = noBiasWeights.transpose() * ctx.layerDeltas[i+1];
 
       assert(ctx.layerDeltas[i].rows() == ctx.layerOutputs[i].rows());
       for (unsigned r = 0; r < ctx.layerDeltas[i].rows(); r++) {
@@ -139,9 +138,8 @@ private:
 
     Tensor weightGradients;
     for (unsigned i = 0; i < numLayers; i++) {
-      auto inputsT = getInputWithBias(i == 0 ? sample.input : ctx.layerOutputs[i-1]);
-      inputsT.transposeInPlace();
-      weightGradients.AddLayer(ctx.layerDeltas[i] * inputsT);
+      auto inputs = getInputWithBias(i == 0 ? sample.input : ctx.layerOutputs[i-1]);
+      weightGradients.AddLayer(ctx.layerDeltas[i] * inputs.transpose());
     }
 
     float error = 0.0f;

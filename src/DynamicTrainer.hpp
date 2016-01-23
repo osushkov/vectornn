@@ -28,6 +28,7 @@ private:
 
   unsigned numCompletePasses;
   unsigned curSamplesIndex;
+  unsigned curSamplesOffset;
   float curLearnRate;
   float prevSampleError;
 

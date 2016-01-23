@@ -27,7 +27,9 @@ void DynamicTrainer::Train(
     Network &network, vector<TrainingSample> &trainingSamples, unsigned iterations) {
 
   shuffle(trainingSamples.begin(), trainingSamples.end(), rnd);
+  numCompletePasses = 0;
   curSamplesIndex = 0;
+  curSamplesOffset = 0;
 
   curLearnRate = startLearnRate;
   prevSampleError = 0.0f;
@@ -71,13 +73,16 @@ TrainingProvider DynamicTrainer::getStochasticSamples(vector<TrainingSample> &al
   unsigned numSamples = min<unsigned>(allSamples.size(), stochasticSamples);
 
   if ((curSamplesIndex + numSamples) > allSamples.size()) {
-    // if (rand() % 10 == 0) {
+    if (numCompletePasses%10 == 0) {
       shuffle(allSamples.begin(), allSamples.end(), rnd);
-    // }
+    } else {
+      curSamplesOffset = rnd() % allSamples.size();
+    }
     curSamplesIndex = 0;
+    numCompletePasses++;
   }
 
-  auto result = TrainingProvider(allSamples, numSamples, curSamplesIndex);
+  auto result = TrainingProvider(allSamples, numSamples, curSamplesIndex + curSamplesOffset);
   curSamplesIndex += numSamples;
 
   return result;
