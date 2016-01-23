@@ -6,15 +6,18 @@
 #include <cmath>
 #include <future>
 #include <iostream>
+#include <thread>
+#include <atomic>
 
 
 static const float INIT_WEIGHT_RANGE = 0.1f;
-// static ThreadPool threadPool(2);
+
 
 struct NetworkContext {
   vector<Vector> layerOutputs;
   vector<Vector> layerDeltas;
 };
+
 
 struct Network::NetworkImpl {
   unsigned numInputs;
@@ -49,16 +52,48 @@ struct Network::NetworkImpl {
   }
 
   pair<Tensor, float> ComputeGradient(const TrainingProvider &samplesProvider) {
+    // Single threaded code below
+
+    // auto gradient = make_pair(zeroGradient, 0.0f);
+    // Tensor& netGradient{gradient.first};
+    // float& error{gradient.second};
+    //
+    // for (unsigned i = 0; i < NUM_THREADS; i++) {
+    //   unsigned start = (i * samplesProvider.NumSamples()) / NUM_THREADS;
+    //   unsigned end = ((i+1) * samplesProvider.NumSamples()) / NUM_THREADS;
+    //
+    //   auto subsetGradient = computeGradientSubset(samplesProvider, start, end);
+    //   netGradient += subsetGradient.first;
+    //   error += subsetGradient.second;
+    // }
+
+    const unsigned numSubsets = ThreadPool::instance().NumThreads();
+
     auto gradient = make_pair(zeroGradient, 0.0f);
     Tensor& netGradient{gradient.first};
     float& error{gradient.second};
 
-    NetworkContext ctx;
-    for (unsigned i = 0; i < samplesProvider.NumSamples(); i++) {
-      pair<Tensor, float> gradientAndError =
-          computeSampleGradient(samplesProvider.GetSample(i), ctx);
-      netGradient += gradientAndError.first;
-      error += gradientAndError.second;
+    mutex gradientMutex;
+    vector<future<void>> futures;
+    futures.reserve(numSubsets);
+
+    for (unsigned i = 0; i < numSubsets; i++) {
+      futures.push_back(ThreadPool::instance().Execute(
+          [this, &gradientMutex, &samplesProvider, &netGradient, &error, i, numSubsets]() {
+        unsigned start = (i * samplesProvider.NumSamples()) / numSubsets;
+        unsigned end = ((i+1) * samplesProvider.NumSamples()) / numSubsets;
+        auto subsetGradient = computeGradientSubset(samplesProvider, start, end);
+
+        {
+          std::unique_lock<std::mutex> lock(gradientMutex);
+          netGradient += subsetGradient.first;
+          error += subsetGradient.second;
+        }
+      }));
+    }
+
+    for (auto& f : futures) {
+      f.get();
     }
 
     float scaleFactor = 1.0f / samplesProvider.NumSamples();
@@ -91,6 +126,24 @@ private:
     return result;
   }
 
+  pair<Tensor, float> computeGradientSubset(
+      const TrainingProvider &samplesProvider, unsigned start, unsigned end) {
+
+    auto gradient = make_pair(zeroGradient, 0.0f);
+    Tensor& netGradient{gradient.first};
+    float& error{gradient.second};
+
+    NetworkContext ctx;
+    for (unsigned i = start; i < end; i++) {
+      pair<Tensor, float> gradientAndError =
+          computeSampleGradient(samplesProvider.GetSample(i), ctx);
+      netGradient += gradientAndError.first;
+      error += gradientAndError.second;
+    }
+
+    return gradient;
+  }
+
   Vector process(const Vector &input, NetworkContext &ctx) {
     assert(input.rows() == numInputs);
 
@@ -110,7 +163,6 @@ private:
       z(i) += layerWeights(i, 0);
       z(i) = activationFunc(z(i));
     }
-
     return z;
   }
 
@@ -136,17 +188,17 @@ private:
       }
     }
 
-    Tensor weightGradients;
+    auto result = make_pair(Tensor(), 0.0f);
     for (unsigned i = 0; i < numLayers; i++) {
       auto inputs = getInputWithBias(i == 0 ? sample.input : ctx.layerOutputs[i-1]);
-      weightGradients.AddLayer(ctx.layerDeltas[i] * inputs.transpose());
+      result.first.AddLayer(ctx.layerDeltas[i] * inputs.transpose());
     }
 
-    float error = 0.0f;
     for (unsigned i = 0; i < output.rows(); i++) {
-      error += (output(i) - sample.expectedOutput(i)) * (output(i) - sample.expectedOutput(i));
+      result.second += (output(i) - sample.expectedOutput(i)) * (output(i) - sample.expectedOutput(i));
     }
-    return make_pair(weightGradients, error);
+
+    return result;
   }
 
   Vector getInputWithBias(const Vector &noBiasInput) {

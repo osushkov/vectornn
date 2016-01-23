@@ -9,6 +9,8 @@
 
 class Network {
 public:
+  static void OutputDebugging(void);
+
   Network(const vector<unsigned> &layerSizes);
   virtual ~Network();
 
