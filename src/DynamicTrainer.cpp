@@ -34,8 +34,12 @@ void DynamicTrainer::Train(
 
   Tensor momentum;
   for (unsigned i = 0; i < iterations; i++) {
-    vector<TrainingSample> samples = getStochasticSamples(trainingSamples);
-    pair<Tensor, float> gradientError = network.ComputeGradient(samples);
+    // if (i%1000 == 0) {
+    //   cout << i << "/" << iterations << endl;
+    // }
+
+    TrainingProvider samplesProvider = getStochasticSamples(trainingSamples);
+    pair<Tensor, float> gradientError = network.ComputeGradient(samplesProvider);
 
     gradientError.first *= -curLearnRate;
 
@@ -63,20 +67,17 @@ void DynamicTrainer::updateLearnRate(unsigned curIter, unsigned iterations, floa
   prevSampleError = sampleError;
 }
 
-vector<TrainingSample> DynamicTrainer::getStochasticSamples(vector<TrainingSample> &allSamples) {
+TrainingProvider DynamicTrainer::getStochasticSamples(vector<TrainingSample> &allSamples) {
   unsigned numSamples = min<unsigned>(allSamples.size(), stochasticSamples);
 
   if ((curSamplesIndex + numSamples) > allSamples.size()) {
-    shuffle(allSamples.begin(), allSamples.end(), rnd);
+    if (rand() % 5 == 0) {
+      shuffle(allSamples.begin(), allSamples.end(), rnd);
+    }
     curSamplesIndex = 0;
   }
 
-  vector<TrainingSample> result;
-  result.reserve(numSamples);
-
-  for (unsigned i = curSamplesIndex; i < (curSamplesIndex + numSamples); i++) {
-    result.push_back(allSamples[i]);
-  }
+  auto result = TrainingProvider(allSamples, numSamples, curSamplesIndex);
   curSamplesIndex += numSamples;
 
   return result;

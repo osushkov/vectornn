@@ -22,8 +22,8 @@ void SimpleTrainer::Train(
   for (unsigned i = 0; i < iterations; i++) {
     float lr = getLearnRate(i, iterations);
 
-    vector<TrainingSample> samples = getStochasticSamples(trainingSamples);
-    pair<Tensor, float> gradientError = network.ComputeGradient(samples);
+    TrainingProvider samplesProvider = getStochasticSamples(trainingSamples);
+    pair<Tensor, float> gradientError = network.ComputeGradient(samplesProvider);
     network.ApplyUpdate(gradientError.first * -lr);
   }
 }
@@ -32,7 +32,7 @@ float SimpleTrainer::getLearnRate(unsigned curIter, unsigned iterations) {
   return startLearnRate + (endLearnRate - startLearnRate) * curIter / (float) iterations;
 }
 
-vector<TrainingSample> SimpleTrainer::getStochasticSamples(vector<TrainingSample> &allSamples) {
+TrainingProvider SimpleTrainer::getStochasticSamples(vector<TrainingSample> &allSamples) {
   unsigned numSamples = min<unsigned>(allSamples.size(), stochasticSamples);
 
   if ((curSamplesIndex + numSamples) >= allSamples.size()) {
@@ -40,12 +40,7 @@ vector<TrainingSample> SimpleTrainer::getStochasticSamples(vector<TrainingSample
     curSamplesIndex = 0;
   }
 
-  vector<TrainingSample> result;
-  result.reserve(numSamples);
-
-  for (unsigned i = curSamplesIndex; i < (curSamplesIndex + numSamples); i++) {
-    result.push_back(allSamples[i]);
-  }
+  auto result = TrainingProvider(allSamples, numSamples, curSamplesIndex);
   curSamplesIndex += numSamples;
 
   return result;

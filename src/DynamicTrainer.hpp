@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Trainer.hpp"
+#include "neuralnetwork/TrainingProvider.hpp"
 #include <random>
 
 class DynamicTrainer : public Trainer {
@@ -30,5 +31,5 @@ private:
   float prevSampleError;
 
   void updateLearnRate(unsigned curIter, unsigned iterations, float sampleError);
-  vector<TrainingSample> getStochasticSamples(vector<TrainingSample> &allSamples);
+  TrainingProvider getStochasticSamples(vector<TrainingSample> &allSamples);
 };

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Trainer.hpp"
+#include "neuralnetwork/TrainingProvider.hpp"
+
 
 class SimpleTrainer : public Trainer {
 public:
@@ -20,6 +22,6 @@ private:
   unsigned curSamplesIndex;
 
   float getLearnRate(unsigned curIter, unsigned iterations);
-  vector<TrainingSample> getStochasticSamples(vector<TrainingSample> &allSamples);
+  TrainingProvider getStochasticSamples(vector<TrainingSample> &allSamples);
 
 };

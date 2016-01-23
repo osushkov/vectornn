@@ -1,11 +1,20 @@
 
 #include "Network.hpp"
 #include "../util/Util.hpp"
+#include "../common/ThreadPool.hpp"
 #include <cassert>
 #include <cmath>
+#include <future>
+#include <iostream>
 
 
 static const float INIT_WEIGHT_RANGE = 0.1f;
+// static ThreadPool threadPool(2);
+
+struct NetworkContext {
+  vector<Vector> layerOutputs;
+  vector<Vector> layerDeltas;
+};
 
 struct Network::NetworkImpl {
   unsigned numInputs;
@@ -13,8 +22,6 @@ struct Network::NetworkImpl {
   unsigned numLayers;
 
   Tensor layerWeights;
-  vector<Vector> layerOutputs;
-  vector<Vector> layerDeltas;
 
 
   NetworkImpl(const vector<unsigned> &layerSizes) {
@@ -31,33 +38,28 @@ struct Network::NetworkImpl {
   Vector Process(const Vector &input) {
     assert(input.rows() == numInputs);
 
-    layerOutputs.clear();
-    Vector nodeValues = input;
-
-    for (unsigned i = 0; i < layerWeights.NumLayers(); i++) {
-      nodeValues = getLayerOutput(nodeValues, layerWeights(i));
-      layerOutputs.push_back(nodeValues);
-    }
-
-    assert(nodeValues.rows() == numOutputs);
-    return nodeValues;
+    NetworkContext ctx;
+    return process(input, ctx);
   }
 
-  pair<Tensor, float> ComputeGradient(const vector<TrainingSample> &samples) {
-    Tensor netGradient = zeroGradient();
-    float error = 0.0f;
+  pair<Tensor, float> ComputeGradient(const TrainingProvider &samplesProvider) {
+    auto gradient = make_pair(zeroGradient(), 0.0f);
+    Tensor& netGradient{gradient.first};
+    float& error{gradient.second};
 
-    for (const auto& sample : samples) {
-      pair<Tensor, float> gradientAndError = computeSampleGradient(sample);
+    NetworkContext ctx;
+    for (unsigned i = 0; i < samplesProvider.NumSamples(); i++) {
+      pair<Tensor, float> gradientAndError =
+          computeSampleGradient(samplesProvider.GetSample(i), ctx);
       netGradient += gradientAndError.first;
       error += gradientAndError.second;
     }
 
-    float scaleFactor = 1.0f / samples.size();
+    float scaleFactor = 1.0f / samplesProvider.NumSamples();
     netGradient *= scaleFactor;
     error *= scaleFactor;
 
-    return make_pair(netGradient, error);
+    return gradient;
   }
 
   void ApplyUpdate(const Tensor &weightUpdates) {
@@ -83,10 +85,29 @@ private:
     return result;
   }
 
-  Vector getLayerOutput(const Vector &prevLayer, const Matrix &layerWeights) {
-    Vector inputWithBias = getInputWithBias(prevLayer);
+  Vector process(const Vector &input, NetworkContext &ctx) {
+    assert(input.rows() == numInputs);
 
-    Vector z = layerWeights * inputWithBias;
+    ctx.layerOutputs.clear();
+    Vector nodeValues = input;
+
+    for (unsigned i = 0; i < layerWeights.NumLayers(); i++) {
+      nodeValues = getLayerOutput(nodeValues, layerWeights(i));
+      ctx.layerOutputs.push_back(nodeValues);
+    }
+
+    assert(nodeValues.rows() == numOutputs);
+    return nodeValues;
+  }
+
+  Vector getLayerOutput(const Vector &prevLayer, const Matrix &layerWeights) {
+    // Vector inputWithBias = getInputWithBias(prevLayer);
+
+    Vector z = layerWeights.topRightCorner(layerWeights.rows(), layerWeights.cols()-1) * prevLayer; //inputWithBias;
+    for (unsigned i = 0; i < layerWeights.rows(); i++) {
+      z(i) += layerWeights(i, 0);
+    }
+
     for (unsigned i = 0; i < z.rows(); i++) {
       z(i) = activationFunc(z(i));
     }
@@ -105,29 +126,48 @@ private:
     return result;
   }
 
-  pair<Tensor, float> computeSampleGradient(const TrainingSample &sample) {
-    Vector output = Process(sample.input);
+  pair<Tensor, float> computeGradient(
+      const vector<TrainingSample> &samples, unsigned start, unsigned end) {
+    Tensor netGradient = zeroGradient();
+    float error = 0.0f;
 
-    layerDeltas.resize(numLayers);
-    layerDeltas[layerDeltas.size() - 1] = output - sample.expectedOutput; // cross entropy error function.
+    for (unsigned i = start; i < end; i++) {
+      NetworkContext ctx;
+      pair<Tensor, float> gradientAndError = computeSampleGradient(samples[i], ctx);
+      netGradient += gradientAndError.first;
+      error += gradientAndError.second;
+    }
 
-    for (int i = layerDeltas.size() - 2; i >= 0; i--) {
+    float scaleFactor = 1.0f / (end - start);
+    netGradient *= scaleFactor;
+    error *= scaleFactor;
+
+    return make_pair(netGradient, error);
+  }
+
+  pair<Tensor, float> computeSampleGradient(const TrainingSample &sample, NetworkContext &ctx) {
+    Vector output = process(sample.input, ctx);
+
+    ctx.layerDeltas.resize(numLayers);
+    ctx.layerDeltas[ctx.layerDeltas.size() - 1] = output - sample.expectedOutput; // cross entropy error function.
+
+    for (int i = ctx.layerDeltas.size() - 2; i >= 0; i--) {
       Matrix noBiasWeights =
           layerWeights(i+1).bottomRightCorner(layerWeights(i+1).rows(), layerWeights(i+1).cols()-1);
-      layerDeltas[i] = noBiasWeights.transpose() * layerDeltas[i+1];
+      ctx.layerDeltas[i] = noBiasWeights.transpose() * ctx.layerDeltas[i+1];
 
-      assert(layerDeltas[i].rows() == layerOutputs[i].rows());
-      for (unsigned r = 0; r < layerDeltas[i].rows(); r++) {
-        float out = layerOutputs[i](r);
-        layerDeltas[i](r) *= out * (1.0f - out);
+      assert(ctx.layerDeltas[i].rows() == ctx.layerOutputs[i].rows());
+      for (unsigned r = 0; r < ctx.layerDeltas[i].rows(); r++) {
+        float out = ctx.layerOutputs[i](r);
+        ctx.layerDeltas[i](r) *= out * (1.0f - out);
       }
     }
 
     Tensor weightGradients;
     for (unsigned i = 0; i < numLayers; i++) {
-      auto input = getInputWithBias(i == 0 ? sample.input : layerOutputs[i-1]);
+      auto input = getInputWithBias(i == 0 ? sample.input : ctx.layerOutputs[i-1]);
       auto inputsT = input.transpose();
-      weightGradients.AddLayer(layerDeltas[i] * inputsT);
+      weightGradients.AddLayer(ctx.layerDeltas[i] * inputsT);
     }
 
     float error = 0.0;
@@ -138,12 +178,10 @@ private:
   }
 
   Vector getInputWithBias(const Vector &noBiasInput) {
-    Vector bias(1);
-    bias(0) = 1.0f;
-
-    Vector inputWithBias(noBiasInput.rows() + bias.rows());
-    inputWithBias << bias, noBiasInput;
-    return inputWithBias;
+    Vector result(noBiasInput.rows() + 1);
+    result(0) = 1.0f;
+    result.bottomRightCorner(noBiasInput.rows(), 1) = noBiasInput;
+    return result;
   }
 };
 
@@ -155,8 +193,8 @@ Vector Network::Process(const Vector &input) {
   return impl->Process(input);
 }
 
-pair<Tensor, float> Network::ComputeGradient(const vector<TrainingSample> &samples) {
-  return impl->ComputeGradient(samples);
+pair<Tensor, float> Network::ComputeGradient(const TrainingProvider &samplesProvider) {
+  return impl->ComputeGradient(samplesProvider);
 }
 
 void Network::ApplyUpdate(const Tensor &weightUpdates) {
@@ -173,10 +211,5 @@ std::ostream& Network::Output(std::ostream& stream) {
     }
     stream << endl;
   }
-  return stream;
-}
-
-std::ostream& operator<<(std::ostream& stream, const TrainingSample& ts) {
-  stream << ts.input << " : " << ts.expectedOutput;
   return stream;
 }
