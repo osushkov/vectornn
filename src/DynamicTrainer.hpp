@@ -26,6 +26,7 @@ private:
 
   mt19937 rnd;
 
+  unsigned numCompletePasses;
   unsigned curSamplesIndex;
   float curLearnRate;
   float prevSampleError;

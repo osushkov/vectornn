@@ -71,9 +71,9 @@ TrainingProvider DynamicTrainer::getStochasticSamples(vector<TrainingSample> &al
   unsigned numSamples = min<unsigned>(allSamples.size(), stochasticSamples);
 
   if ((curSamplesIndex + numSamples) > allSamples.size()) {
-    if (rand() % 5 == 0) {
+    // if (rand() % 10 == 0) {
       shuffle(allSamples.begin(), allSamples.end(), rnd);
-    }
+    // }
     curSamplesIndex = 0;
   }
 

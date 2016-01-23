@@ -22,6 +22,7 @@ struct Network::NetworkImpl {
   unsigned numLayers;
 
   Tensor layerWeights;
+  Tensor zeroGradient;
 
 
   NetworkImpl(const vector<unsigned> &layerSizes) {
@@ -33,6 +34,11 @@ struct Network::NetworkImpl {
     for (unsigned i = 0; i < numLayers; i++) {
       layerWeights.AddLayer(createLayer(layerSizes[i], layerSizes[i+1]));
     }
+
+    zeroGradient = layerWeights;
+    for (unsigned i = 0; i < zeroGradient.NumLayers(); i++) {
+      zeroGradient(i).setZero();
+    }
   }
 
   Vector Process(const Vector &input) {
@@ -43,7 +49,7 @@ struct Network::NetworkImpl {
   }
 
   pair<Tensor, float> ComputeGradient(const TrainingProvider &samplesProvider) {
-    auto gradient = make_pair(zeroGradient(), 0.0f);
+    auto gradient = make_pair(zeroGradient, 0.0f);
     Tensor& netGradient{gradient.first};
     float& error{gradient.second};
 
@@ -102,24 +108,14 @@ private:
     Vector z = layerWeights.topRightCorner(layerWeights.rows(), layerWeights.cols()-1) * prevLayer;
     for (unsigned i = 0; i < layerWeights.rows(); i++) {
       z(i) += layerWeights(i, 0);
-    }
-
-    for (unsigned i = 0; i < z.rows(); i++) {
       z(i) = activationFunc(z(i));
     }
+
     return z;
   }
 
   float activationFunc(float v) {
     return 1.0f / (1.0f + expf(-v));
-  }
-
-  Tensor zeroGradient(void) {
-    Tensor result = layerWeights;
-    for (unsigned i = 0; i < result.NumLayers(); i++) {
-      result(i).setZero();
-    }
-    return result;
   }
 
   pair<Tensor, float> computeSampleGradient(const TrainingSample &sample, NetworkContext &ctx) {
@@ -131,7 +127,8 @@ private:
     for (int i = ctx.layerDeltas.size() - 2; i >= 0; i--) {
       Matrix noBiasWeights =
           layerWeights(i+1).bottomRightCorner(layerWeights(i+1).rows(), layerWeights(i+1).cols()-1);
-      ctx.layerDeltas[i] = noBiasWeights.transpose() * ctx.layerDeltas[i+1];
+      noBiasWeights.transposeInPlace();
+      ctx.layerDeltas[i] = noBiasWeights * ctx.layerDeltas[i+1];
 
       assert(ctx.layerDeltas[i].rows() == ctx.layerOutputs[i].rows());
       for (unsigned r = 0; r < ctx.layerDeltas[i].rows(); r++) {
@@ -142,12 +139,12 @@ private:
 
     Tensor weightGradients;
     for (unsigned i = 0; i < numLayers; i++) {
-      auto input = getInputWithBias(i == 0 ? sample.input : ctx.layerOutputs[i-1]);
-      auto inputsT = input.transpose();
+      auto inputsT = getInputWithBias(i == 0 ? sample.input : ctx.layerOutputs[i-1]);
+      inputsT.transposeInPlace();
       weightGradients.AddLayer(ctx.layerDeltas[i] * inputsT);
     }
 
-    float error = 0.0;
+    float error = 0.0f;
     for (unsigned i = 0; i < output.rows(); i++) {
       error += (output(i) - sample.expectedOutput(i)) * (output(i) - sample.expectedOutput(i));
     }

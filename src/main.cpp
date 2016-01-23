@@ -82,7 +82,7 @@ int main() {
   uptr<Trainer> trainer = make_unique<DynamicTrainer>(0.5f, 0.5f, 0.25f, 500);
 
   vector<TrainingSample> trainingSamples = getTrainingData(8000);
-  trainer->Train(network, trainingSamples, 100000);
+  trainer->Train(network, trainingSamples, 50000);
 
   vector<TrainingSample> evalSamples = getTrainingData(1000);
   evaluateNetwork(network, evalSamples);
