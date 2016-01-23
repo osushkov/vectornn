@@ -88,22 +88,21 @@ private:
   Vector process(const Vector &input, NetworkContext &ctx) {
     assert(input.rows() == numInputs);
 
-    ctx.layerOutputs.clear();
+    ctx.layerOutputs.resize(layerWeights.NumLayers());
     Vector nodeValues = input;
 
-    for (unsigned i = 0; i < layerWeights.NumLayers(); i++) {
-      nodeValues = getLayerOutput(nodeValues, layerWeights(i));
-      ctx.layerOutputs.push_back(nodeValues);
+    ctx.layerOutputs[0] = getLayerOutput(input, layerWeights(i));
+
+    for (unsigned i = 1; i < layerWeights.NumLayers(); i++) {
+      ctx.layerOutputs[i] = getLayerOutput(ctx.layerOutputs[i-1], layerWeights(i));
     }
 
-    assert(nodeValues.rows() == numOutputs);
-    return nodeValues;
+    assert(ctx.layerOutput[ctx.layerOutput.size()-1].rows() == numOutputs);
+    return ctx.layerOutput[ctx.layerOutput.size()-1];
   }
 
   Vector getLayerOutput(const Vector &prevLayer, const Matrix &layerWeights) {
-    // Vector inputWithBias = getInputWithBias(prevLayer);
-
-    Vector z = layerWeights.topRightCorner(layerWeights.rows(), layerWeights.cols()-1) * prevLayer; //inputWithBias;
+    Vector z = layerWeights.topRightCorner(layerWeights.rows(), layerWeights.cols()-1) * prevLayer;
     for (unsigned i = 0; i < layerWeights.rows(); i++) {
       z(i) += layerWeights(i, 0);
     }
