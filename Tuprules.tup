@@ -1,5 +1,4 @@
 CC = g++
-CUDACC = nvcc
 
 CCFLAGS += -std=c++14
 CCFLAGS += -I/usr/local/include -I/usr/include/eigen3
